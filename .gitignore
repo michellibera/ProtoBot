@@ -1,0 +1,16 @@
+.env
+state/
+agent/inbox_files/
+venv/
+__pycache__/
+node_modules/
+
+# runtime data of the agent (memory, schedule, learned skills, browser artifacts)
+agent/memory/
+agent/jobs.json
+agent/*.png
+agent/.playwright-mcp/
+agent/.claude/settings.local.json
+agent/.claude/skills/*
+!agent/.claude/skills/create-skill/
+!agent/.claude/skills/schedule-job/
