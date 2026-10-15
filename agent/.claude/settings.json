@@ -1,4 +1,5 @@
 {
+  "model": "claude-haiku-5-5",
   "enableAllProjectMcpServers": true,
   "claudeMdExcludes": ["**/Projects/CLAUDE.md", "**/Projects/AGENTS.md"]
 }
