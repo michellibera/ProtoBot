@@ -32,6 +32,7 @@ STATE_DIR = ROOT / "state"
 FILES_DIR = AGENT_DIR / "inbox_files"
 STATE_FILE = STATE_DIR / "state.json"
 INBOX_FILE = STATE_DIR / "inbox.jsonl"
+SENT_QUESTIONS_FILE = STATE_DIR / "sent_questions.jsonl"
 JOBS_FILE = AGENT_DIR / "jobs.json"
 JOBS_STATE_FILE = STATE_DIR / "jobs_state.json"
 for d in (STATE_DIR, FILES_DIR):
@@ -147,6 +148,18 @@ def split_text(text: str, limit: int = TG_LIMIT) -> list[str]:
         text = text[cut:].lstrip("\n")
     chunks.append(text)
     return chunks
+
+
+def log_sent_question(job_id: str, text: str, chat_id: int) -> None:
+    """Log a question sent to the user (from a scheduled job)."""
+    record = {
+        "ts": datetime.now().isoformat(timespec="seconds"),
+        "job_id": job_id,
+        "chat_id": chat_id,
+        "text": text,
+    }
+    with open(SENT_QUESTIONS_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
 def send(chat_id: int, text: str) -> None:
@@ -378,7 +391,9 @@ def run_job(job: dict) -> None:
             )
         text = res["text"].strip()
         if text and text != "NO_REPORT" and chat_id:
-            send(chat_id, f"[{jid}] {text}")
+            msg = f"[{jid}] {text}"
+            send(chat_id, msg)
+            log_sent_question(jid, msg, chat_id)
         log(f"[job] done {jid} cost=${res['cost']:.4f}")
     except Exception as e:
         log(f"[job] {jid} failed: {e!r}")
