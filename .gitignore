@@ -11,6 +11,8 @@ agent/jobs.json
 agent/*.png
 agent/.playwright-mcp/
 agent/.claude/settings.local.json
+agents/
 agent/.claude/skills/*
 !agent/.claude/skills/create-skill/
 !agent/.claude/skills/schedule-job/
+backups/

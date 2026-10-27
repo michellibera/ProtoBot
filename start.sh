@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 cd "$(dirname "$(readlink -f "$0")")" || exit 1
 
-if [ ! -d venv ]; then
-    python3 -m venv venv
-    venv/bin/pip install -r requirements.txt
-fi
+[ -d venv ] || python3 -m venv venv
+# Every start, so new dependencies reach an existing venv (fast when already installed).
+venv/bin/pip install -q -r requirements.txt
 
 trap 'echo; echo "stopped"; exit 0' INT TERM
 

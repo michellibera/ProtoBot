@@ -5,7 +5,7 @@ No database: memory is plain files. `dispatch.py` is only plumbing (Telegram <->
 scheduler, crash safety). Thinking, memory and skills are handled by Claude Code itself inside `agent/`.
 
 ```
-Telegram <-> dispatch.py --claude -p (--resume)--> agent/ (CLAUDE.md, memory/, skills, jobs.json, Playwright MCP)
+Telegram (main) + web UI (all agents) <-> dispatch.py --claude -p (--resume)--> agent/ and agents/<name>/ (CLAUDE.md, memory/, skills, jobs.json, Playwright MCP)
                  |-- state/ (offset, session, inbox.jsonl)     scheduler every 30 s -> jobs.json -> fresh session -> Telegram
 ```
 
@@ -17,6 +17,20 @@ Telegram <-> dispatch.py --claude -p (--resume)--> agent/ (CLAUDE.md, memory/, s
    - `ALLOWED_USER_IDS`: your numeric Telegram user id (ask @userinfobot). The bot refuses to start without it, because the agent has full permissions.
 3. Run `start.bat` (creates a venv, installs dependencies, restarts the dispatcher after a crash).
 4. Message the bot. A good first task: "Let's get acquainted: ask me about my goals and preferences and save them to memory."
+
+## Web UI and multiple agents (optional)
+Set `WEB_ENABLED=on` and `WEB_TOKEN=<long random string>` in `.env`, restart, open `http://127.0.0.1:8765`.
+- Telegram stays the single-agent bot: it talks only to `main` (`agent/`). The web UI shows all agents and is the only place to create new ones.
+- Each agent is its own Claude Code working directory, `agents/<name>/` (role in `CLAUDE.md`, own memory, jobs and skills, copied from `agent/` on creation). Agents work in parallel, up to `MAX_PARALLEL_CHATS`.
+- Job reports of extra agents land in their web chat, with a short notification on Telegram.
+- The server binds to `127.0.0.1` on purpose: the agent has full permissions. On a VPS reach it through an SSH tunnel (`ssh -L 8765:127.0.0.1:8765 vps`) or Tailscale, never a public port.
+- Code: `core.py` (agents, queues, sessions, scheduler), `telegram_channel.py`, `web.py` + `web/index.html`, `dispatch.py` (wiring). Tests: `pip install -r requirements-dev.txt`, `pytest`.
+- The first start migrates the single-agent state (`state/state.json`, `inbox.jsonl`) to `state/agents/main/`. The pre-migration version is tagged `v1-telegram`.
+
+## Backups
+`python tools/backup.py create` saves memory, learned skills, extra agents and `state/` to `backups/` (keeps the last 14; `--with-env` adds `.env`).
+`python tools/backup.py list`, `python tools/backup.py restore latest` (bot stopped; the current state is saved as a `pre-restore` backup first).
+Daily on a VPS: `crontab -e` -> `0 3 * * * cd ~/ProtoBot && venv/bin/python tools/backup.py create`. Copy `backups/` off the machine now and then.
 
 ## Telegram commands
 `/new` (save state and start a fresh session), `/stop`, `/status`, `/jobs`, `/help`.

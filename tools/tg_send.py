@@ -30,6 +30,11 @@ if not token or not chat:
 if chat not in allowed:
     sys.exit("Chat is not on the whitelist")
 
+# The dispatcher sets PROTOBOT_AGENT for every Claude Code run; extra agents are named so the user knows who writes.
+agent = os.getenv("PROTOBOT_AGENT", "main")
+if agent != "main":
+    args.text = f"[{agent}] {args.text}"
+
 api = f"https://api.telegram.org/bot{token}"
 if args.file:
     path = Path(args.file)

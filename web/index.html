@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ProtoBot</title>
+<style>
+  :root { --bg:#f6f6f4; --surface:#fff; --fg:#1d1d1b; --muted:#6b6b66; --line:#e2e2dc; --accent:#3b5bdb;
+          --accent-soft:#e7ecff; --warn:#b7791f; --bad:#c92a2a; color-scheme: light; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#151514; --surface:#1f1f1d; --fg:#ececea; --muted:#9a9a94; --line:#33332f; --accent:#7c94ff;
+            --accent-soft:#25294a; --warn:#e0a850; --bad:#ff6b6b; color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display:none !important; } /* author display rules would otherwise override the hidden attribute */
+  body { margin:0; font:14px/1.45 system-ui, sans-serif; background:var(--bg); color:var(--fg); }
+  .app { display:grid; grid-template-columns: 240px minmax(0, 1fr); height:100dvh; }
+  aside { border-right:1px solid var(--line); background:var(--surface); display:flex; flex-direction:column; min-height:0; }
+  aside h1 { font-size:15px; margin:0; padding:14px 16px; border-bottom:1px solid var(--line); }
+  #agents { list-style:none; margin:0; padding:6px; overflow:auto; flex:1; }
+  #agents li { padding:8px 10px; border-radius:8px; cursor:pointer; display:flex; gap:8px; align-items:center; }
+  #agents li:hover { background:var(--bg); }
+  #agents li.sel { background:var(--accent-soft); }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--line); flex:none; }
+  .dot.busy { background:var(--warn); }
+  #agents small { color:var(--muted); display:block; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:170px; }
+  details.new { border-top:1px solid var(--line); }
+  details.new summary { padding:10px 16px; cursor:pointer; color:var(--accent); }
+  details.new form { padding:0 10px 10px; display:grid; gap:6px; }
+  main { display:flex; flex-direction:column; min-height:0; min-width:0; }
+  header { padding:12px 16px; border-bottom:1px solid var(--line); display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  header .title { flex:1; min-width:160px; }
+  header .title b { font-size:15px; }
+  header .title div { color:var(--muted); font-size:12px; }
+  #log { flex:1; overflow:auto; padding:16px; display:flex; flex-direction:column; gap:10px; }
+  .msg { max-width:min(760px, 92%); padding:9px 12px; border-radius:10px; white-space:pre-wrap; word-wrap:break-word; border:1px solid var(--line); background:var(--surface); }
+  .msg.user { align-self:flex-end; background:var(--accent-soft); border-color:transparent; }
+  .msg.system, .msg.job { align-self:center; color:var(--muted); font-size:13px; background:transparent; border-style:dashed; }
+  .msg .meta { display:block; color:var(--muted); font-size:11px; margin-bottom:3px; }
+  form.send { display:flex; gap:8px; padding:12px 16px; border-top:1px solid var(--line); background:var(--surface); }
+  textarea, input { font:inherit; color:inherit; background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:8px 10px; width:100%; }
+  textarea { resize:vertical; min-height:42px; max-height:40vh; }
+  button { font:inherit; border:1px solid var(--line); background:var(--surface); color:var(--fg); border-radius:8px; padding:7px 12px; cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .err { color:var(--bad); font-size:12px; min-height:1em; }
+  #status { color:var(--muted); font-size:12px; }
+  .login { max-width:360px; margin:15vh auto; padding:20px; display:grid; gap:10px; }
+  @media (max-width: 700px) {
+    .app { grid-template-columns:minmax(0, 1fr); grid-template-rows:auto minmax(0, 1fr); }
+    aside { max-height:45dvh; border-right:0; border-bottom:1px solid var(--line); }
+    aside h1 { display:none; }
+    #agents { display:flex; gap:4px; overflow-x:auto; flex:none; }
+    #agents li { flex:none; }
+    #agents small { display:none; }
+    header { padding:8px 12px; }
+    #log { padding:12px; }
+    form.send { padding:8px 12px; }
+  }
+</style>
+</head>
+<body>
+<form class="login" id="login" hidden>
+  <b>ProtoBot</b>
+  <input id="token" type="password" placeholder="WEB_TOKEN" autocomplete="current-password">
+  <button class="primary">Sign in</button>
+  <div class="err" id="loginErr"></div>
+</form>
+
+<div class="app" id="app" hidden>
+  <aside>
+    <h1>ProtoBot agents</h1>
+    <ul id="agents"></ul>
+    <details class="new" id="newBox">
+      <summary>+ New agent</summary>
+      <form id="newForm">
+        <input id="newName" placeholder="name, e.g. research" required>
+        <textarea id="newRole" placeholder="role: what this agent is for, how it should work" required></textarea>
+        <button class="primary">Create agent</button>
+        <div class="err" id="newErr"></div>
+      </form>
+    </details>
+  </aside>
+  <main>
+    <header>
+      <div class="title"><b id="curName"></b><div id="curRole"></div></div>
+      <span id="status"></span>
+      <button id="btnNew" title="Save state to memory and start a fresh session">New session</button>
+      <button id="btnStop">Stop</button>
+    </header>
+    <div id="log"></div>
+    <form class="send" id="sendForm">
+      <textarea id="text" placeholder="Message (Ctrl+Enter to send)"></textarea>
+      <button class="primary">Send</button>
+    </form>
+  </main>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let token = "", current = "main", lastIndex = 0, agentsCache = [];
+try { token = localStorage.getItem("pb_token") || ""; current = localStorage.getItem("pb_agent") || "main"; } catch (e) {}
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, { ...opts, headers: { "Content-Type": "application/json", "X-Token": token, ...(opts.headers || {}) } });
+  if (r.status === 401) { showLogin("Invalid token"); throw new Error("401"); }
+  const data = r.headers.get("content-type")?.includes("json") ? await r.json() : null;
+  if (!r.ok) throw new Error(data?.detail || r.statusText);
+  return data;
+}
+
+function showLogin(msg = "") { $("app").hidden = true; $("login").hidden = false; $("loginErr").textContent = msg; }
+
+$("login").onsubmit = async e => {
+  e.preventDefault();
+  token = $("token").value.trim();
+  try { await api("/api/agents"); } catch (err) { return; }
+  try { localStorage.setItem("pb_token", token); } catch (e) {}
+  $("login").hidden = true; $("app").hidden = false;
+  start();
+};
+
+function renderAgents() {
+  const ul = $("agents"); ul.replaceChildren();
+  for (const a of agentsCache) {
+    const li = document.createElement("li");
+    li.className = a.name === current ? "sel" : "";
+    const dot = document.createElement("span"); dot.className = "dot" + (a.busy ? " busy" : "");
+    const box = document.createElement("div");
+    const b = document.createElement("b"); b.textContent = a.name;
+    const s = document.createElement("small"); s.textContent = a.name === "main" ? "Telegram + web" : a.role;
+    box.append(b, s); li.append(dot, box);
+    li.onclick = () => select(a.name);
+    ul.append(li);
+  }
+  const a = agentsCache.find(x => x.name === current);
+  if (!a) return;
+  $("curName").textContent = a.name;
+  $("curRole").textContent = a.name === "main" ? "main agent (also on Telegram)" : a.role;
+  $("status").textContent = (a.busy ? "working..." : "idle") + (a.queue ? ` | queue ${a.queue}` : "")
+    + ` | turns ${a.turns}/${a.max_turns}` + (a.jobs.length ? ` | jobs: ${a.jobs.join(", ")}` : "");
+}
+
+function addMessage(m) {
+  const div = document.createElement("div");
+  div.className = "msg " + m.role;
+  const meta = document.createElement("span"); meta.className = "meta";
+  meta.textContent = `${m.role} | ${m.channel} | ${m.ts.replace("T", " ")}`;
+  div.append(meta, document.createTextNode(m.text));
+  $("log").append(div);
+}
+
+async function refreshAgents() { agentsCache = await api("/api/agents"); renderAgents(); }
+
+async function refreshMessages() {
+  const name = current;
+  const list = await api(`/api/agents/${encodeURIComponent(name)}/messages?after=${lastIndex}`);
+  if (name !== current || !list.length) return;
+  const log = $("log"), atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 60;
+  list.forEach(addMessage);
+  lastIndex = list[list.length - 1].i;
+  if (atBottom || lastIndex === list.length) log.scrollTop = log.scrollHeight;
+}
+
+function select(name) {
+  current = name; lastIndex = 0; $("log").replaceChildren();
+  try { localStorage.setItem("pb_agent", name); } catch (e) {}
+  renderAgents(); refreshMessages();
+}
+
+$("sendForm").onsubmit = async e => {
+  e.preventDefault();
+  const text = $("text").value.trim();
+  if (!text) return;
+  $("text").value = "";
+  await api(`/api/agents/${encodeURIComponent(current)}/messages`, { method: "POST", body: JSON.stringify({ text }) });
+  refreshMessages(); refreshAgents();
+};
+$("text").onkeydown = e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) $("sendForm").requestSubmit(); };
+$("btnNew").onclick = () => api(`/api/agents/${encodeURIComponent(current)}/new`, { method: "POST" }).then(refreshAgents);
+$("btnStop").onclick = () => api(`/api/agents/${encodeURIComponent(current)}/stop`, { method: "POST" }).then(refreshAgents);
+
+$("newForm").onsubmit = async e => {
+  e.preventDefault();
+  $("newErr").textContent = "";
+  try {
+    const a = await api("/api/agents", { method: "POST", body: JSON.stringify({ name: $("newName").value.trim(), role: $("newRole").value.trim() }) });
+    $("newName").value = ""; $("newRole").value = ""; $("newBox").open = false;
+    await refreshAgents(); select(a.name);
+  } catch (err) { $("newErr").textContent = err.message; }
+};
+
+let timer;
+async function start() {
+  await refreshAgents();
+  if (!agentsCache.some(a => a.name === current)) current = "main";
+  select(current);
+  clearInterval(timer);
+  timer = setInterval(() => { refreshAgents().catch(() => {}); refreshMessages().catch(() => {}); }, 2000);
+}
+
+if (token) { $("app").hidden = false; start().catch(() => {}); } else { showLogin(); }
+</script>
+</body>
+</html>

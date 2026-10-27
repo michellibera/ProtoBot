@@ -6,7 +6,8 @@ description: Schedule a task for later or on a recurring basis (reminders, daily
 # Scheduling jobs
 
 Jobs live in `jobs.json` (in the agent working directory) as a JSON list. The dispatcher checks it every 30 s,
-runs each due job in a NEW session (no chat history), and sends the reply to the user on Telegram.
+runs each due job in a NEW session (no chat history), and sends the reply to the user: the main agent's
+reports go to Telegram in full; other agents' reports go to their web UI chat plus a short Telegram notification.
 Run state is kept by the dispatcher in `../state/`, so do not store run info in `jobs.json`.
 
 ## Job format
