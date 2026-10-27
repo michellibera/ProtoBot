@@ -40,7 +40,7 @@ def root(tmp_path, monkeypatch):
     monkeypatch.setattr(core, "_seq", 0)
     monkeypatch.setattr(core, "channels", {"test": FakeChannel(), "web": core.WebChannel()})
     sent = []
-    monkeypatch.setattr(core, "notifier", lambda text, chat_id=None: sent.append(text))
+    monkeypatch.setattr(core, "notifier", lambda text, chat_id=None: sent.append(text) or chat_id or 42)
     core.init()
     yield tmp_path, sent
     core.set_root(Path(core.__file__).resolve().parent)
@@ -154,6 +154,28 @@ def test_job_report_main_full_on_telegram_others_short_with_ui_pointer(root):
     assert sent[1].startswith("[research/scan] ") and "full report in the web UI" in sent[1]
     assert len(sent[1]) < 400
     assert research.read_chat()[-1]["text"] == f"[scan] {long_text}"
+
+
+def test_main_job_reports_are_logged_as_sent_questions_in_the_v1_format(root):
+    tmp, _ = root
+    core.report_job(core.agents["main"], {"id": "checkin"}, "Did you pay the rent?")
+    core.report_job(core.agents["main"], {"id": "other", "chat_id": 7}, "Second")
+
+    records = core.read_jsonl(tmp / "state" / "sent_questions.jsonl")
+    assert [{k: r[k] for k in ("job_id", "chat_id", "text")} for r in records] == [
+        {"job_id": "checkin", "chat_id": 42, "text": "[checkin] Did you pay the rent?"},
+        {"job_id": "other", "chat_id": 7, "text": "[other] Second"},
+    ]
+    assert set(records[0]) == {"ts", "job_id", "chat_id", "text"}
+
+
+def test_unsent_or_other_agent_reports_are_not_logged_as_sent_questions(root, monkeypatch):
+    tmp, _ = root
+    core.report_job(core.create_agent("research", "role", start=False), {"id": "scan"}, "found 3 papers")
+    monkeypatch.setattr(core, "notifier", None)  # no Telegram: nothing was sent
+    core.report_job(core.agents["main"], {"id": "checkin"}, "question")
+
+    assert not (tmp / "state" / "sent_questions.jsonl").exists()
 
 
 def test_new_command_rotates_session(root, fake_claude):

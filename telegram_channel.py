@@ -96,10 +96,11 @@ def send(chat_id: int, text: str) -> None:
         tg("sendMessage", chat_id=chat_id, text=chunk)
 
 
-def notify(text: str, chat_id: int | None = None) -> None:
+def notify(text: str, chat_id: int | None = None) -> int | None:
     chat_id = chat_id or get_state()["chat_id"]
     if chat_id:
         send(chat_id, text)
+    return chat_id
 
 
 @contextmanager

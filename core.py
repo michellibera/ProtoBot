@@ -140,12 +140,12 @@ class WebChannel:
 
 
 channels: dict[str, Channel] = {"web": WebChannel()}
-notifier: Callable[[str, int | None], None] | None = None  # set by the Telegram channel: (text, chat_id)
+# Set by the Telegram channel: (text, chat_id or None for the default chat) -> chat_id it went to, None if not sent.
+notifier: Callable[[str, int | None], int | None] | None = None
 
 
-def notify(text: str, chat_id: int | None = None) -> None:
-    if notifier:
-        notifier(text, chat_id)
+def notify(text: str, chat_id: int | None = None) -> int | None:
+    return notifier(text, chat_id) if notifier else None
 
 
 # --- agents ---------------------------------------------------------------------
@@ -443,7 +443,12 @@ def report_job(agent: Agent, job: dict, text: str) -> None:
     jid = job["id"]
     agent.log_chat("job", f"[{jid}] {text}", "job")
     if agent.name == MAIN:
-        notify(f"[{jid}] {text}", job.get("chat_id"))
+        msg = f"[{jid}] {text}"
+        chat_id = notify(msg, job.get("chat_id"))
+        if chat_id:
+            # The main agent reads this to know what its jobs asked the user (it only sees its own inbox otherwise).
+            append_jsonl(STATE_DIR / "sent_questions.jsonl", {"ts": datetime.now().isoformat(timespec="seconds"),
+                                                              "job_id": jid, "chat_id": chat_id, "text": msg})
         return
     preview = text if len(text) <= NOTIFY_PREVIEW_CHARS else text[:NOTIFY_PREVIEW_CHARS].rstrip() + "..."
     notify(f"[{agent.name}/{jid}] {preview}\n(full report in the web UI)")
