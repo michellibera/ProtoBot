@@ -282,15 +282,23 @@ def delete_agent(name: str) -> Path:
             raise ValueError("The main agent cannot be deleted.")
         if agent.working or agent.proc or agent.running_jobs:
             raise ValueError(f"Agent '{name}' is working. Stop it and wait for its jobs to finish.")
+        # Files first: if Windows refuses the move (a file is open), the agent stays fully intact.
+        dest = DELETED_DIR / f"{name}-{datetime.now():%Y%m%d-%H%M%S}"
+        dest.mkdir(parents=True, exist_ok=True)
+        try:
+            os.replace(agent.path, dest / "workspace")
+        except OSError as e:
+            raise ValueError(f"Cannot move files of '{name}' (in use?): {e}") from e
+        if agent.state_dir.exists():
+            try:
+                os.replace(agent.state_dir, dest / "state")
+            except OSError as e:
+                os.replace(dest / "workspace", agent.path)
+                raise ValueError(f"Cannot move state of '{name}' (in use?): {e}") from e
         del agents[name]
         while not agent.queue.empty():  # unprocessed messages are dropped with the agent
             agent.queue.get_nowait()
         agent.queue.put(None)  # ends the worker loop
-        dest = DELETED_DIR / f"{name}-{datetime.now():%Y%m%d-%H%M%S}"
-        dest.mkdir(parents=True)
-        shutil.move(agent.path, dest / "workspace")
-        if agent.state_dir.exists():
-            shutil.move(agent.state_dir, dest / "state")
     log(f"[agents] deleted {name} -> {dest}")
     return dest
 

@@ -179,7 +179,7 @@ async function refreshMessages() {
 }
 
 function select(name) {
-  current = name; lastIndex = 0; $("log").replaceChildren(); $("headErr").hidden = true;
+  current = name; lastIndex = 0; $("log").replaceChildren(); $("headErr").hidden = true; disarmDelete();
   try { localStorage.setItem("pb_agent", name); } catch (e) {}
   renderAgents(); refreshMessages();
   if (!$("jobsPanel").hidden) refreshJobs().catch(() => {});
@@ -240,13 +240,26 @@ $("btnJobs").onclick = () => {
   if (!panel.hidden) refreshJobs().catch(err => { panel.replaceChildren(el("div", "err", err.message)); });
 };
 
+// Two clicks instead of confirm(): embedded browsers may block dialogs, which makes confirm() return false silently.
+let deleteArmed = null, deleteTimer;
+function disarmDelete() { deleteArmed = null; clearTimeout(deleteTimer); $("btnDelete").textContent = "Delete"; }
+
 $("btnDelete").onclick = async () => {
   const name = current;
-  if (!confirm(`Delete agent "${name}"? Its files are moved to deleted/ (recoverable by hand).`)) return;
+  if (deleteArmed !== name) {
+    deleteArmed = name;
+    $("btnDelete").textContent = `Confirm delete ${name}?`;
+    deleteTimer = setTimeout(disarmDelete, 5000);
+    return;
+  }
+  disarmDelete();
   try {
     await api(`/api/agents/${encodeURIComponent(name)}`, { method: "DELETE" });
     await refreshAgents(); select("main");
-  } catch (err) { $("headErr").textContent = err.message; $("headErr").hidden = false; }
+  } catch (err) {
+    $("headErr").textContent = `Delete failed: ${err.message}` + (err.message === "Method Not Allowed" ? " (restart the dispatcher)" : "");
+    $("headErr").hidden = false;
+  }
 };
 
 $("newForm").onsubmit = async e => {

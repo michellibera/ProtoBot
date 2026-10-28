@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -60,6 +62,25 @@ def test_delete_refuses_main_and_working_agents(client):
     core.agents["research"].running_jobs.add("scan")
     assert client.delete("/api/agents/research", headers=H).status_code == 409
     assert client.delete("/api/agents/ghost", headers=H).status_code == 404
+
+
+def test_failed_file_move_keeps_the_agent_intact(client, root, monkeypatch):  # noqa: F811
+    tmp, _ = root
+    client.post("/api/agents", json={"name": "research", "role": "Papers."}, headers=H)
+    client.post("/api/agents/research/messages", json={"text": "hi"}, headers=H)
+    real_replace = core.os.replace
+
+    def locked_state(src, dst):  # workspace moves, state is "in use"
+        if Path(src) == core.agents["research"].state_dir:
+            raise PermissionError("file in use")
+        real_replace(src, dst)
+
+    monkeypatch.setattr(core.os, "replace", locked_state)
+    r = client.delete("/api/agents/research", headers=H)
+
+    assert r.status_code == 409 and "in use" in r.json()["detail"]
+    assert "research" in core.agents
+    assert (tmp / "agents" / "research" / "CLAUDE.md").exists()  # workspace moved back
 
 
 def test_recreated_agent_does_not_replay_messages_of_the_deleted_one(client, monkeypatch):
