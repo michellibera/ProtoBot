@@ -47,6 +47,8 @@ JOB_HEADER = (
     "[Scheduled run | job: {jid} | {now}]\n"
     "New session with no chat history. Start by reading memory/MEMORY.md and memory/handoff.md. "
     "Do the task below. Finish with a short report for the user. "
+    "Your final reply IS the message to the user: the dispatcher delivers it to Telegram and the web UI, "
+    "so do not send it yourself with tg_send.py (use tg_send.py only for files). "
     "If there is nothing worth reporting, reply with exactly: NO_REPORT\n\nTASK:\n{prompt}"
 )
 ROLE_HEADER = """# My role: {name}
@@ -68,14 +70,15 @@ def log(msg: str) -> None:
 
 
 # --- paths (set_root lets tests run against a temporary copy) -----------------
-MAIN_DIR = AGENTS_DIR = STATE_DIR = INBOX_FILE = ROOT
+MAIN_DIR = AGENTS_DIR = DELETED_DIR = STATE_DIR = INBOX_FILE = ROOT
 
 
 def set_root(root: Path) -> None:
-    global ROOT, MAIN_DIR, AGENTS_DIR, STATE_DIR, INBOX_FILE
+    global ROOT, MAIN_DIR, AGENTS_DIR, DELETED_DIR, STATE_DIR, INBOX_FILE
     ROOT = root
     MAIN_DIR = root / "agent"
     AGENTS_DIR = root / "agents"
+    DELETED_DIR = root / "deleted"
     STATE_DIR = root / "state"
     INBOX_FILE = STATE_DIR / "inbox.jsonl"
 
@@ -157,6 +160,7 @@ class Agent:
         self.queue: "queue.Queue[dict]" = queue.Queue()
         self.proc: subprocess.Popen | None = None
         self.stopped = False
+        self.working = False  # the worker is handling a message (also before/after the Claude process runs)
         self.running_jobs: set[str] = set()
         self._lock = threading.Lock()
 
@@ -194,6 +198,13 @@ class Agent:
         with self._lock:
             append_jsonl(self.chat_file, {"ts": datetime.now().isoformat(timespec="seconds"),
                                           "role": role, "text": text, "channel": channel})
+
+    def log_sent(self, text: str, job_id: str = "") -> None:
+        """Record a message the agent sent to Telegram itself (tools/tg_send.py), so the web UI shows it too."""
+        if job_id:
+            self.log_chat("job", f"[{job_id}] {text}", "telegram")
+        else:
+            self.log_chat("agent", text, "telegram")
 
     def read_chat(self, after: int = 0) -> list[dict]:
         """Chat history entries with index > `after` (1-based index in the file)."""
@@ -253,10 +264,35 @@ def create_agent(name: str, role: str, start: bool = True) -> Agent:
         save_json(path / "agent.json", {"name": name, "role": role,
                                         "created": datetime.now().isoformat(timespec="seconds")})
         agent = agents[name] = Agent(name, path)
+        # A reused name must not replay inbox items of a deleted agent with the same name.
+        agent.update_state(processed_seq=_seq)
     log(f"[agents] created {name}")
     if start:
         start_worker(agent)
     return agent
+
+
+def delete_agent(name: str) -> Path:
+    """Remove an idle agent. Its workspace and state are moved to deleted/<name>-<time>/, not erased."""
+    with registry_lock:
+        agent = agents.get(name)
+        if not agent:
+            raise KeyError(name)
+        if name == MAIN:
+            raise ValueError("The main agent cannot be deleted.")
+        if agent.working or agent.proc or agent.running_jobs:
+            raise ValueError(f"Agent '{name}' is working. Stop it and wait for its jobs to finish.")
+        del agents[name]
+        while not agent.queue.empty():  # unprocessed messages are dropped with the agent
+            agent.queue.get_nowait()
+        agent.queue.put(None)  # ends the worker loop
+        dest = DELETED_DIR / f"{name}-{datetime.now():%Y%m%d-%H%M%S}"
+        dest.mkdir(parents=True)
+        shutil.move(agent.path, dest / "workspace")
+        if agent.state_dir.exists():
+            shutil.move(agent.state_dir, dest / "state")
+    log(f"[agents] deleted {name} -> {dest}")
+    return dest
 
 
 def load_agents() -> None:
@@ -310,7 +346,8 @@ def migrate_legacy_state() -> list[dict]:
 
 
 # --- Claude Code ------------------------------------------------------------------
-def run_claude(agent: Agent, prompt: str, session_id: str | None = None, track: bool = True) -> dict:
+def run_claude(agent: Agent, prompt: str, session_id: str | None = None, track: bool = True,
+               job_id: str | None = None) -> dict:
     """Run one `claude -p` call in the agent's directory. Returns {text, session_id, is_error, cost}."""
     cmd = [CLAUDE_BIN, "-p", "--output-format", "json", "--permission-mode", PERMISSION_MODE]
     model = agent.meta.get("model") or MODEL
@@ -321,10 +358,12 @@ def run_claude(agent: Agent, prompt: str, session_id: str | None = None, track: 
         cmd += ["--mcp-config", str(mcp_file)]
     if session_id:
         cmd += ["--resume", session_id]
+    # Read by tools/tg_send.py to log what it sends into this agent's chat history (web UI).
+    env = {**os.environ, "PROTOBOT_AGENT": agent.name, "PROTOBOT_JOB": job_id or ""}
 
     proc = subprocess.Popen(
         cmd, cwd=agent.path, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        text=True, encoding="utf-8", errors="replace", env={**os.environ, "PROTOBOT_AGENT": agent.name},
+        text=True, encoding="utf-8", errors="replace", env=env,
     )
     if track:
         agent.proc, agent.stopped = proc, False
@@ -410,8 +449,12 @@ def process(agent: Agent, item: dict) -> None:
 
 def start_worker(agent: Agent) -> None:
     def loop():
-        while True:
-            process(agent, agent.queue.get())
+        while (item := agent.queue.get()) is not None:
+            agent.working = True
+            try:
+                process(agent, item)
+            finally:
+                agent.working = False
 
     threading.Thread(target=loop, daemon=True, name=f"worker-{agent.name}").start()
 
@@ -461,7 +504,7 @@ def run_job(agent: Agent, job: dict) -> None:
             log(f"[job:{agent.name}] start {jid}")
             res = run_claude(
                 agent, JOB_HEADER.format(jid=jid, now=f"{datetime.now():%Y-%m-%d %H:%M}", prompt=job["prompt"]),
-                None, track=False,
+                None, track=False, job_id=jid,
             )
         text = res["text"].strip()
         if text and text != "NO_REPORT":
@@ -493,6 +536,8 @@ def schedule_tick(agent: Agent, now: datetime) -> None:
 def scheduler() -> None:
     while True:
         for agent in list(agents.values()):
+            if agents.get(agent.name) is not agent:  # deleted since the snapshot
+                continue
             try:
                 schedule_tick(agent, datetime.now())
             except Exception as e:

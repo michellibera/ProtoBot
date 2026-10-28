@@ -12,9 +12,9 @@ import sys
 from pathlib import Path
 
 import requests
-from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import core  # loads .env; used to mirror sent messages into the agent's web UI chat
 
 parser = argparse.ArgumentParser()
 parser.add_argument("text", nargs="?", default="")
@@ -31,8 +31,9 @@ if chat not in allowed:
     sys.exit("Chat is not on the whitelist")
 
 # The dispatcher sets PROTOBOT_AGENT for every Claude Code run; extra agents are named so the user knows who writes.
-agent = os.getenv("PROTOBOT_AGENT", "main")
-if agent != "main":
+agent = os.getenv("PROTOBOT_AGENT", core.MAIN)
+logged_text = args.text + (f"\n(file: {args.file})" if args.file else "")
+if agent != core.MAIN:
     args.text = f"[{agent}] {args.text}"
 
 api = f"https://api.telegram.org/bot{token}"
@@ -46,5 +47,8 @@ else:
     r = requests.post(f"{api}/sendMessage", json={"chat_id": chat, "text": args.text[:4000]}, timeout=20)
 
 result = r.json()
+if result.get("ok") and (agent == core.MAIN or core.NAME_RE.match(agent)):
+    path = core.MAIN_DIR if agent == core.MAIN else core.AGENTS_DIR / agent
+    core.Agent(agent, path).log_sent(logged_text, os.getenv("PROTOBOT_JOB", ""))
 print("OK" if result.get("ok") else f"ERROR: {result.get('description')}")
 sys.exit(0 if result.get("ok") else 1)

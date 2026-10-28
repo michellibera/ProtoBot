@@ -42,7 +42,19 @@
   textarea { resize:vertical; min-height:42px; max-height:40vh; }
   button { font:inherit; border:1px solid var(--line); background:var(--surface); color:var(--fg); border-radius:8px; padding:7px 12px; cursor:pointer; }
   button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.danger { color:var(--bad); }
   .err { color:var(--bad); font-size:12px; min-height:1em; }
+  #headErr { padding:6px 16px; border-bottom:1px solid var(--line); }
+  #jobsPanel { padding:10px 16px; border-bottom:1px solid var(--line); background:var(--surface); max-height:40dvh; overflow:auto; display:grid; gap:8px; }
+  .job { border:1px solid var(--line); border-radius:8px; padding:8px 10px; }
+  .job.off { opacity:.55; }
+  .job .head { display:flex; gap:8px; flex-wrap:wrap; align-items:baseline; }
+  .job .sched, .job .last { color:var(--muted); font-size:12px; }
+  .job .tag { font-size:11px; padding:1px 6px; border-radius:6px; background:var(--bg); color:var(--muted); }
+  .job .tag.run { background:var(--warn); color:#fff; }
+  .job details { margin-top:4px; font-size:13px; }
+  .job details div { white-space:pre-wrap; word-wrap:break-word; color:var(--muted); margin-top:4px; }
+  .muted { color:var(--muted); font-size:13px; }
   #status { color:var(--muted); font-size:12px; }
   .login { max-width:360px; margin:15vh auto; padding:20px; display:grid; gap:10px; }
   @media (max-width: 700px) {
@@ -84,9 +96,13 @@
     <header>
       <div class="title"><b id="curName"></b><div id="curRole"></div></div>
       <span id="status"></span>
+      <button id="btnJobs" title="Scheduled jobs saved by this agent (jobs.json)">Jobs</button>
       <button id="btnNew" title="Save state to memory and start a fresh session">New session</button>
       <button id="btnStop">Stop</button>
+      <button id="btnDelete" class="danger" title="Move this agent's files to deleted/ and remove it">Delete</button>
     </header>
+    <div class="err" id="headErr" hidden></div>
+    <section id="jobsPanel" hidden></section>
     <div id="log"></div>
     <form class="send" id="sendForm">
       <textarea id="text" placeholder="Message (Ctrl+Enter to send)"></textarea>
@@ -136,6 +152,7 @@ function renderAgents() {
   if (!a) return;
   $("curName").textContent = a.name;
   $("curRole").textContent = a.name === "main" ? "main agent (also on Telegram)" : a.role;
+  $("btnDelete").hidden = a.name === "main";
   $("status").textContent = (a.busy ? "working..." : "idle") + (a.queue ? ` | queue ${a.queue}` : "")
     + ` | turns ${a.turns}/${a.max_turns}` + (a.jobs.length ? ` | jobs: ${a.jobs.join(", ")}` : "");
 }
@@ -162,9 +179,10 @@ async function refreshMessages() {
 }
 
 function select(name) {
-  current = name; lastIndex = 0; $("log").replaceChildren();
+  current = name; lastIndex = 0; $("log").replaceChildren(); $("headErr").hidden = true;
   try { localStorage.setItem("pb_agent", name); } catch (e) {}
   renderAgents(); refreshMessages();
+  if (!$("jobsPanel").hidden) refreshJobs().catch(() => {});
 }
 
 $("sendForm").onsubmit = async e => {
@@ -178,6 +196,58 @@ $("sendForm").onsubmit = async e => {
 $("text").onkeydown = e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) $("sendForm").requestSubmit(); };
 $("btnNew").onclick = () => api(`/api/agents/${encodeURIComponent(current)}/new`, { method: "POST" }).then(refreshAgents);
 $("btnStop").onclick = () => api(`/api/agents/${encodeURIComponent(current)}/stop`, { method: "POST" }).then(refreshAgents);
+
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+function describeSchedule(s = {}) {
+  if (s.type === "once") return `once at ${String(s.at).replace("T", " ")}`;
+  if (s.type === "daily") return `daily at ${s.time}` + (s.days?.length ? ` (${s.days.map(d => DAYS[d] ?? d).join(", ")})` : "");
+  if (s.type === "every") return `every ${s.minutes} min`;
+  return JSON.stringify(s);
+}
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+async function refreshJobs() {
+  const name = current, panel = $("jobsPanel");
+  const jobs = await api(`/api/agents/${encodeURIComponent(name)}/jobs`);
+  if (name !== current) return;
+  const running = agentsCache.find(a => a.name === name)?.jobs || [];
+  panel.replaceChildren(el("b", "", `Jobs of ${name} (${jobs.length})`));
+  if (!jobs.length) panel.append(el("div", "muted", "No scheduled jobs."));
+  for (const j of jobs) {
+    const on = j.enabled !== false;
+    const box = el("div", "job" + (on ? "" : " off"));
+    const head = el("div", "head");
+    head.append(el("b", "", j.id ?? "(no id)"), el("span", "tag", on ? "on" : "off"));
+    if (running.includes(j.id)) head.append(el("span", "tag run", "running"));
+    head.append(el("span", "sched", describeSchedule(j.schedule)),
+                el("span", "last", `last run: ${j.last_run ? j.last_run.replace("T", " ") : "-"}`));
+    const det = el("details");
+    det.append(el("summary", "", "prompt"), el("div", "", j.prompt ?? ""));
+    box.append(head, det);
+    panel.append(box);
+  }
+}
+
+$("btnJobs").onclick = () => {
+  const panel = $("jobsPanel");
+  panel.hidden = !panel.hidden;
+  if (!panel.hidden) refreshJobs().catch(err => { panel.replaceChildren(el("div", "err", err.message)); });
+};
+
+$("btnDelete").onclick = async () => {
+  const name = current;
+  if (!confirm(`Delete agent "${name}"? Its files are moved to deleted/ (recoverable by hand).`)) return;
+  try {
+    await api(`/api/agents/${encodeURIComponent(name)}`, { method: "DELETE" });
+    await refreshAgents(); select("main");
+  } catch (err) { $("headErr").textContent = err.message; $("headErr").hidden = false; }
+};
 
 $("newForm").onsubmit = async e => {
   e.preventDefault();

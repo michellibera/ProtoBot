@@ -21,9 +21,11 @@ Web UI   ──> all agents (agent/, agents/*) ├─ core.py: queue + session p
 - An agent is a Claude Code working directory: role in `CLAUDE.md`, `memory/`, `jobs.json`, skills.
 - `main` = `agent/`, the only agent on Telegram. Extra agents live in `agents/<name>/`, created from the web UI
   (files copied from `agent/`; later edits of `agent/CLAUDE.md` do not reach existing agents).
+  Delete (web UI, idle agents only, not `main`) moves the workspace and state to `deleted/<name>-<time>/`.
 - Agents work in parallel (`MAX_PARALLEL_CHATS`, `MAX_PARALLEL_JOBS`).
-- Jobs: an agent edits its own `jobs.json`; the scheduler runs due jobs in fresh sessions. Reports of `main` go to
-  Telegram (also logged to `state/sent_questions.jsonl`); other agents report in the web UI plus a short Telegram note.
+- Jobs: an agent edits its own `jobs.json`; the scheduler runs due jobs in fresh sessions. Every report lands in the
+  agent's web UI chat; `main` also sends it in full to Telegram (logged to `state/sent_questions.jsonl`), other agents
+  a short Telegram note. Messages an agent sends itself with `tools/tg_send.py` are mirrored to its web UI chat too.
 - After `SESSION_MAX_TURNS` messages the agent saves state to `memory/handoff.md` and a fresh session starts.
 
 ## Web UI

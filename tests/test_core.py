@@ -50,8 +50,9 @@ def root(tmp_path, monkeypatch):
 def fake_claude(monkeypatch):
     calls = []
 
-    def run(agent, prompt, session_id=None, track=True):
-        calls.append({"agent": agent.name, "cwd": agent.path, "prompt": prompt, "session_id": session_id})
+    def run(agent, prompt, session_id=None, track=True, job_id=None):
+        calls.append({"agent": agent.name, "cwd": agent.path, "prompt": prompt, "session_id": session_id,
+                      "job_id": job_id})
         return {"text": f"reply from {agent.name}", "session_id": f"s-{agent.name}", "is_error": False, "cost": 0}
 
     monkeypatch.setattr(core, "run_claude", run)
@@ -176,6 +177,28 @@ def test_unsent_or_other_agent_reports_are_not_logged_as_sent_questions(root, mo
     core.report_job(core.agents["main"], {"id": "checkin"}, "question")
 
     assert not (tmp / "state" / "sent_questions.jsonl").exists()
+
+
+def test_main_job_report_reaches_both_telegram_and_web_chat(root, fake_claude):
+    _, sent = root
+    main = core.agents["main"]
+    main.running_jobs.add("brief")
+    core.run_job(main, {"id": "brief", "prompt": "summarise"})
+
+    assert fake_claude[0]["job_id"] == "brief"  # exposed to tg_send.py as PROTOBOT_JOB
+    assert sent == ["[brief] reply from main"]
+    assert [(m["role"], m["text"]) for m in main.read_chat()] == [("job", "[brief] reply from main")]
+
+
+def test_messages_sent_by_the_agent_itself_are_mirrored_to_web_chat(root):
+    main = core.agents["main"]
+    main.log_sent("Time for a shower!", job_id="shower")
+    main.log_sent("progress: 50%")
+
+    assert [(m["role"], m["text"], m["channel"]) for m in main.read_chat()] == [
+        ("job", "[shower] Time for a shower!", "telegram"),
+        ("agent", "progress: 50%", "telegram"),
+    ]
 
 
 def test_new_command_rotates_session(root, fake_claude):

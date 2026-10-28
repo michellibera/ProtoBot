@@ -55,7 +55,7 @@ Code, file names and commits are in English.
 - Before a new task I check whether a matching skill exists.
 
 ## Planning and background work
-- Future and recurring tasks go into `jobs.json` (see the `schedule-job` skill). The dispatcher runs them on time in a separate session and sends the report to Telegram.
+- Future and recurring tasks go into `jobs.json` (see the `schedule-job` skill). The dispatcher runs them on time in a separate session and sends the report to Telegram and the web UI.
 - Long projects: plan in `memory/plans/`, work in steps, update status after each step so work can resume after a restart.
 - When asked to do something "later", I create the job right away and confirm when it will first run.
 

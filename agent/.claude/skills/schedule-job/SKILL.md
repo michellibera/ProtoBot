@@ -6,8 +6,8 @@ description: Schedule a task for later or on a recurring basis (reminders, daily
 # Scheduling jobs
 
 Jobs live in `jobs.json` (in the agent working directory) as a JSON list. The dispatcher checks it every 30 s,
-runs each due job in a NEW session (no chat history), and sends the reply to the user: the main agent's
-reports go to Telegram in full; other agents' reports go to their web UI chat plus a short Telegram notification.
+runs each due job in a NEW session (no chat history), and sends the reply to the user: every report is kept in
+the agent's web UI chat; the main agent's reports also go to Telegram in full, other agents' as a short notification.
 Run state is kept by the dispatcher in `../state/`, so do not store run info in `jobs.json`.
 
 ## Job format
@@ -26,7 +26,8 @@ Schedule types:
 
 ## Rules
 1. Edit the file safely: read it, add/modify the entry, write valid JSON back. Keep ids unique and kebab-case.
-2. The prompt must be self-contained and say what to report. Jobs reply with the exact text `NO_REPORT` when there is nothing worth telling the user, to avoid noise.
+2. The prompt must be self-contained and say what to report. The job's final reply is the message (also for
+   reminders: "Reply with: Time for a shower!"); do not tell it to send via `tg_send.py`, which skips the dispatcher. Jobs reply with the exact text `NO_REPORT` when there is nothing worth telling the user, to avoid noise.
 3. Jobs that need approval for outward actions must prepare a draft and ask the user in the report, not act.
 4. Long project: store the plan in `memory/plans/<topic>.md` and let the job read it, do the next step, update status.
 5. Confirm to the user what was scheduled and when it will first run. Add a line to `memory/handoff.md`.

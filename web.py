@@ -68,6 +68,18 @@ def create_agent(body: NewAgent):
         raise HTTPException(400, str(e))
 
 
+@app.delete("/api/agents/{name}")
+def delete_agent(name: str):
+    agent_or_404(name)
+    try:
+        core.delete_agent(name)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    except KeyError:  # deleted concurrently
+        raise HTTPException(404, f"No agent '{name}'")
+    return {"deleted": name}
+
+
 @app.get("/api/agents/{name}/messages")
 def messages(name: str, after: int = 0):
     return agent_or_404(name).read_chat(after)
@@ -96,7 +108,9 @@ def stop(name: str):
 def jobs(name: str):
     agent = agent_or_404(name)
     js = core.load_json(agent.jobs_state_file, {})
-    return [dict(j, last_run=js.get(j.get("id"), {}).get("last_run")) for j in core.load_json(agent.jobs_file, [])]
+    jobs = core.load_json(agent.jobs_file, [])
+    return [dict(j, last_run=js.get(j.get("id"), {}).get("last_run"))
+            for j in (jobs if isinstance(jobs, list) else []) if isinstance(j, dict)]
 
 
 def start() -> None:

@@ -12,6 +12,7 @@ agent/*.png
 agent/.playwright-mcp/
 agent/.claude/settings.local.json
 agents/
+deleted/
 agent/.claude/skills/*
 !agent/.claude/skills/create-skill/
 !agent/.claude/skills/schedule-job/
