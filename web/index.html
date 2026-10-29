@@ -35,7 +35,7 @@
   #log { flex:1; overflow:auto; padding:16px; display:flex; flex-direction:column; gap:10px; }
   .msg { max-width:min(760px, 92%); padding:9px 12px; border-radius:10px; white-space:pre-wrap; word-wrap:break-word; border:1px solid var(--line); background:var(--surface); }
   .msg.user { align-self:flex-end; background:var(--accent-soft); border-color:transparent; }
-  .msg.system, .msg.job { align-self:center; color:var(--muted); font-size:13px; background:transparent; border-style:dashed; }
+  .msg.system { align-self:center; color:var(--muted); font-size:13px; background:transparent; border-style:dashed; }
   .msg .meta { display:block; color:var(--muted); font-size:11px; margin-bottom:3px; }
   form.send { display:flex; gap:8px; padding:12px 16px; border-top:1px solid var(--line); background:var(--surface); }
   textarea, input { font:inherit; color:inherit; background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:8px 10px; width:100%; }
@@ -159,7 +159,7 @@ function renderAgents() {
 
 function addMessage(m) {
   const div = document.createElement("div");
-  div.className = "msg " + m.role;
+  div.className = "msg " + (m.role === "job" ? "agent" : m.role);
   const meta = document.createElement("span"); meta.className = "meta";
   meta.textContent = `${m.role} | ${m.channel} | ${m.ts.replace("T", " ")}`;
   div.append(meta, document.createTextNode(m.text));
