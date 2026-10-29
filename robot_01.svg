@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1536 697" role="img" aria-label="Minimalistyczne logo robota z oczami 0 i 1">
+  <title>Robot 01</title>
+  <g fill="#000">
+    <!-- Antenna -->
+    <circle cx="768" cy="105" r="35"/>
+    <rect x="757" y="132" width="22" height="63"/>
+    <path d="M701 230 A67 67 0 0 1 835 230 Z"/>
+    <!-- Flat side ears -->
+    <path d="M495 310 H479 Q449 310 449 340 V414 Q449 444 479 444 H495 Z"/>
+    <path d="M1041 310 H1057 Q1087 310 1087 340 V414 Q1087 444 1057 444 H1041 Z"/>
+    <!-- Head outline -->
+    <rect x="505" y="223" width="526" height="302" rx="83" fill="#000"/>
+    <rect x="529" y="247" width="478" height="254" rx="60" fill="#fff"/>
+    <!-- Eye disks -->
+    <circle cx="657" cy="379" r="85"/>
+    <circle cx="883" cy="379" r="85"/>
+    <!-- Neck and base -->
+    <rect x="703" y="512" width="130" height="34"/>
+    <path d="M674 558 H862 Q876 558 883 573 L897 602 Q901 613 889 613 H648 Q635 613 640 601 L653 573 Q659 558 674 558 Z"/>
+  </g>
+  <!-- Eye numerals, outlined as scalable vector paths using text converted to paths via font fallback? -->
+  <g fill="#fff">
+    <!-- Zero as a compound shape -->
+    <path fill-rule="evenodd" d="M657 333 C635 333 622 352 622 379 C622 408 634 427 657 427 C680 427 693 408 693 379 C693 352 680 333 657 333 Z M657 353 C649 353 646 362 646 379 C646 397 649 407 657 407 C665 407 669 397 669 379 C669 362 665 353 657 353 Z"/>
+    <!-- One -->
+    <path d="M874 336 H897 V411 H914 V427 H854 V411 H873 V361 L856 372 V352 Z"/>
+  </g>
+</svg>

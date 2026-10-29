@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ProtoBot</title>
+<!-- Same robot as the #logo symbol; data URI because the server serves no static files. Colors follow the OS theme. -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='440 60 656 562'%3E%3Cstyle%3E.f%7Bfill:%231d1d1b%7D.b%7Bfill:%23fff%7D@media (prefers-color-scheme:dark)%7B.f%7Bfill:%23ececea%7D.b%7Bfill:%231f1f1d%7D%7D%3C/style%3E%3Cg class='f'%3E%3Ccircle cx='768' cy='105' r='35'/%3E%3Crect x='757' y='132' width='22' height='63'/%3E%3Cpath d='M701 230 A67 67 0 0 1 835 230 Z'/%3E%3Cpath d='M495 310 H479 Q449 310 449 340 V414 Q449 444 479 444 H495 Z'/%3E%3Cpath d='M1041 310 H1057 Q1087 310 1087 340 V414 Q1087 444 1057 444 H1041 Z'/%3E%3Crect x='505' y='223' width='526' height='302' rx='83'/%3E%3C/g%3E%3Crect class='b' x='529' y='247' width='478' height='254' rx='60'/%3E%3Cg class='f'%3E%3Ccircle cx='657' cy='379' r='85'/%3E%3Ccircle cx='883' cy='379' r='85'/%3E%3Crect x='703' y='512' width='130' height='34'/%3E%3Cpath d='M674 558 H862 Q876 558 883 573 L897 602 Q901 613 889 613 H648 Q635 613 640 601 L653 573 Q659 558 674 558 Z'/%3E%3C/g%3E%3Cg class='b'%3E%3Cpath fill-rule='evenodd' d='M657 333 C635 333 622 352 622 379 C622 408 634 427 657 427 C680 427 693 408 693 379 C693 352 680 333 657 333 Z M657 353 C649 353 646 362 646 379 C646 397 649 407 657 407 C665 407 669 397 669 379 C669 362 665 353 657 353 Z'/%3E%3Cpath d='M874 336 H897 V411 H914 V427 H854 V411 H873 V361 L856 372 V352 Z'/%3E%3C/g%3E%3C/svg%3E">
 <style>
   :root { --bg:#f6f6f4; --surface:#fff; --fg:#1d1d1b; --muted:#6b6b66; --line:#e2e2dc; --accent:#3b5bdb;
           --accent-soft:#e7ecff; --warn:#b7791f; --bad:#c92a2a; color-scheme: light; }
@@ -16,7 +18,9 @@
   body { margin:0; font:14px/1.45 system-ui, sans-serif; background:var(--bg); color:var(--fg); }
   .app { display:grid; grid-template-columns: 240px minmax(0, 1fr); height:100dvh; }
   aside { border-right:1px solid var(--line); background:var(--surface); display:flex; flex-direction:column; min-height:0; }
-  aside h1 { font-size:15px; margin:0; padding:14px 16px; border-bottom:1px solid var(--line); }
+  aside h1 { font-size:15px; margin:0; padding:14px 16px; border-bottom:1px solid var(--line); display:flex; gap:8px; align-items:center; }
+  .logo { width:24px; height:24px; flex:none; --logo-bg:var(--surface); }
+  .login .logo { width:40px; height:40px; --logo-bg:var(--bg); }
   #agents { list-style:none; margin:0; padding:6px; overflow:auto; flex:1; }
   #agents li { padding:8px 10px; border-radius:8px; cursor:pointer; display:flex; gap:8px; align-items:center; }
   #agents li:hover { background:var(--bg); }
@@ -71,7 +75,30 @@
 </style>
 </head>
 <body>
+<!-- Logo from robot_01.svg, cropped viewBox; black -> currentColor and white -> --logo-bg so it follows the theme. -->
+<svg style="position:absolute; width:0; height:0" aria-hidden="true">
+  <symbol id="logo" viewBox="440 60 656 562">
+    <g style="fill:currentColor">
+      <circle cx="768" cy="105" r="35"/>
+      <rect x="757" y="132" width="22" height="63"/>
+      <path d="M701 230 A67 67 0 0 1 835 230 Z"/>
+      <path d="M495 310 H479 Q449 310 449 340 V414 Q449 444 479 444 H495 Z"/>
+      <path d="M1041 310 H1057 Q1087 310 1087 340 V414 Q1087 444 1057 444 H1041 Z"/>
+      <rect x="505" y="223" width="526" height="302" rx="83"/>
+      <rect x="529" y="247" width="478" height="254" rx="60" style="fill:var(--logo-bg, #fff)"/>
+      <circle cx="657" cy="379" r="85"/>
+      <circle cx="883" cy="379" r="85"/>
+      <rect x="703" y="512" width="130" height="34"/>
+      <path d="M674 558 H862 Q876 558 883 573 L897 602 Q901 613 889 613 H648 Q635 613 640 601 L653 573 Q659 558 674 558 Z"/>
+    </g>
+    <g style="fill:var(--logo-bg, #fff)">
+      <path fill-rule="evenodd" d="M657 333 C635 333 622 352 622 379 C622 408 634 427 657 427 C680 427 693 408 693 379 C693 352 680 333 657 333 Z M657 353 C649 353 646 362 646 379 C646 397 649 407 657 407 C665 407 669 397 669 379 C669 362 665 353 657 353 Z"/>
+      <path d="M874 336 H897 V411 H914 V427 H854 V411 H873 V361 L856 372 V352 Z"/>
+    </g>
+  </symbol>
+</svg>
 <form class="login" id="login" hidden>
+  <svg class="logo" aria-hidden="true"><use href="#logo"/></svg>
   <b>ProtoBot</b>
   <input id="token" type="password" placeholder="WEB_TOKEN" autocomplete="current-password">
   <button class="primary">Sign in</button>
@@ -80,7 +107,7 @@
 
 <div class="app" id="app" hidden>
   <aside>
-    <h1>ProtoBot agents</h1>
+    <h1><svg class="logo" aria-hidden="true"><use href="#logo"/></svg>ProtoBot agents</h1>
     <ul id="agents"></ul>
     <details class="new" id="newBox">
       <summary>+ New agent</summary>
