@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -113,3 +114,121 @@ def test_jobs_tolerates_a_broken_jobs_file(client):
 
 def test_unknown_agent_is_404(client):
     assert client.get("/api/agents/ghost/messages", headers=H).status_code == 404
+
+
+def test_settings_update_role_model_turns_and_pause(client, root):  # noqa: F811
+    tmp, _ = root
+    client.post("/api/agents", json={"name": "research", "role": "Papers."}, headers=H)
+    r = client.patch("/api/agents/research", json={"role": "Patents.", "model": "opus", "max_turns": 10,
+                                                   "paused": True}, headers=H)
+    assert r.status_code == 200
+    a = r.json()
+    assert (a["role"], a["model"], a["max_turns"], a["paused"]) == ("Patents.", "opus", 10, True)
+    claude_md = (tmp / "agents" / "research" / "CLAUDE.md").read_text(encoding="utf-8")
+    assert "Patents." in claude_md and "Papers." not in claude_md and "../../tools/" in claude_md
+
+    a = client.patch("/api/agents/research", json={"model": "", "max_turns": 0, "paused": False}, headers=H).json()
+    assert (a["model"], a["max_turns"], a["paused"]) == ("", core.MAX_TURNS, False)
+
+
+def test_main_role_is_read_only(client):
+    assert client.patch("/api/agents/main", json={"role": "x"}, headers=H).status_code == 400
+    assert client.patch("/api/agents/main", json={"paused": True}, headers=H).json()["paused"] is True
+
+
+def test_paused_agent_runs_no_jobs(client, monkeypatch):
+    research = core.create_agent("research", "role", start=False)
+    core.save_json(research.jobs_file, [{"id": "tick", "schedule": {"type": "once", "at": "2026-01-01T00:00"},
+                                         "prompt": "x"}])
+    started = []
+    monkeypatch.setattr(core.threading, "Thread", lambda target, args, daemon: type(
+        "T", (), {"start": lambda self: started.append(args[1]["id"])})())
+    client.patch("/api/agents/research", json={"paused": True}, headers=H)
+    core.schedule_tick(research, datetime(2026, 10, 30, 9, 0))
+    assert started == [] and client.get("/api/agents/research/jobs", headers=H).json()[0]["next_run"] is None
+
+    client.patch("/api/agents/research", json={"paused": False}, headers=H)
+    core.schedule_tick(research, datetime(2026, 10, 30, 9, 0))
+    assert started == ["tick"]
+
+
+def test_rules_add_and_delete_keep_other_lines(client):
+    rules = core.agents["main"].memory_dir / "rules.md"
+    rules.write_text("# Rules\n\nIntro text.\n- Be brief.\n", encoding="utf-8")
+    assert client.get("/api/agents/main/setup", headers=H).json()["rules"] == ["Be brief."]
+
+    assert client.post("/api/agents/main/rules", json={"text": "Cite\nsources."}, headers=H).json() \
+        == ["Be brief.", "Cite sources."]
+    assert client.post("/api/agents/main/rules/delete", json={"text": "Be brief."}, headers=H).json() \
+        == ["Cite sources."]
+    assert rules.read_text(encoding="utf-8") == "# Rules\n\nIntro text.\n- Cite sources.\n"
+    assert client.post("/api/agents/main/rules/delete", json={"text": "gone"}, headers=H).status_code == 404
+    assert client.post("/api/agents/main/rules", json={"text": "  "}, headers=H).status_code == 400
+
+
+def test_memory_and_knowledge_files_are_listed_and_readable(client, root):  # noqa: F811
+    tmp, _ = root
+    mem = core.agents["main"].memory_dir
+    (mem / "knowledge").mkdir()
+    (mem / "knowledge" / "market.md").write_text("Prices.", encoding="utf-8")
+    (tmp / "agent" / "secret.txt").write_text("no", encoding="utf-8")
+
+    s = client.get("/api/agents/main/setup", headers=H).json()
+    assert [f["path"] for f in s["knowledge"]] == ["knowledge/market.md"]
+    assert "MEMORY.md" in [f["path"] for f in s["memory"]]
+    assert client.get("/api/agents/main/memory", params={"path": "knowledge/market.md"},
+                      headers=H).json()["text"] == "Prices."
+    for bad in ("../secret.txt", str(tmp / "agent" / "secret.txt"), "knowledge"):
+        assert client.get("/api/agents/main/memory", params={"path": bad}, headers=H).status_code == 404
+
+
+JOB = {"id": "digest", "schedule": {"type": "daily", "time": "8:00", "days": [4, 0, 0]}, "prompt": " Scan. "}
+
+
+def test_job_create_edit_delete(client):
+    r = client.post("/api/agents/main/jobs", json=JOB, headers=H)
+    assert r.status_code == 201
+    assert r.json() == {"id": "digest", "enabled": True, "prompt": "Scan.",
+                        "schedule": {"type": "daily", "time": "08:00", "days": [0, 4]}}
+    assert client.post("/api/agents/main/jobs", json=JOB, headers=H).status_code == 400  # duplicate id
+
+    jobs_file = core.agents["main"].jobs_file
+    core.save_json(jobs_file, [dict(core.load_json(jobs_file, [])[0], chat_id=7)])  # a key the UI does not know
+    r = client.put("/api/agents/main/jobs/digest", headers=H, json={
+        "id": "digest", "enabled": False, "schedule": {"type": "every", "minutes": 30}, "prompt": "Other."})
+    assert r.status_code == 200
+    [saved] = core.load_json(jobs_file, [])
+    assert saved == {"id": "digest", "enabled": False, "schedule": {"type": "every", "minutes": 30},
+                     "prompt": "Other.", "chat_id": 7}
+
+    assert client.put("/api/agents/main/jobs/ghost", json=JOB, headers=H).status_code == 404
+    assert client.delete("/api/agents/main/jobs/digest", headers=H).status_code == 200
+    assert core.load_json(jobs_file, None) == []
+    assert client.delete("/api/agents/main/jobs/digest", headers=H).status_code == 404
+
+
+@pytest.mark.parametrize("bad", [
+    {"id": "Bad Id"}, {"prompt": " "}, {"schedule": {"type": "daily", "time": "25:00"}},
+    {"schedule": {"type": "daily", "time": "08:00", "days": [7]}}, {"schedule": {"type": "every", "minutes": 0}},
+    {"schedule": {"type": "once", "at": "tomorrow"}}, {"schedule": {"type": "cron"}},
+])
+def test_job_validation(client, bad):
+    assert client.post("/api/agents/main/jobs", json={**JOB, **bad}, headers=H).status_code == 400
+
+
+def test_run_now_starts_job_without_touching_last_run(client, monkeypatch):
+    client.post("/api/agents/main/jobs", json=JOB, headers=H)
+    started = []
+    monkeypatch.setattr(core.threading, "Thread", lambda target, args, daemon: type(
+        "T", (), {"start": lambda self: started.append(args[1]["id"])})())
+    assert client.post("/api/agents/main/jobs/digest/run", headers=H).status_code == 202
+    assert started == ["digest"] and core.agents["main"].running_jobs == {"digest"}
+    assert client.get("/api/agents/main/jobs", headers=H).json()[0]["running"] is True
+    assert client.post("/api/agents/main/jobs/digest/run", headers=H).status_code == 409  # already running
+    assert client.post("/api/agents/main/jobs/ghost/run", headers=H).status_code == 404
+    assert core.load_json(core.agents["main"].jobs_state_file, {}) == {}
+
+
+def test_status_counts_jobs(client):
+    client.post("/api/agents/main/jobs", json=JOB, headers=H)
+    assert client.get("/api/agents", headers=H).json()[0]["job_count"] == 1

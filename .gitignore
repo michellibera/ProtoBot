@@ -8,6 +8,7 @@ node_modules/
 # runtime data of the agent (memory, schedule, learned skills, browser artifacts)
 agent/memory/
 agent/jobs.json
+agent/agent.json
 agent/*.png
 agent/.playwright-mcp/
 agent/.claude/settings.local.json

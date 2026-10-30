@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -221,3 +221,39 @@ def test_daily_schedule(now, last, expected):
     job = {"schedule": {"type": "daily", "time": "08:00"}}
     parse = lambda s: datetime.strptime(s, "%Y-%m-%d %H:%M") if s else None
     assert core.is_due(job, parse(last), parse(now)) is expected
+
+
+@pytest.mark.parametrize("sched,last,now,expected", [
+    ({"type": "daily", "time": "08:00"}, None, "2026-10-30T07:00", "2026-10-30T08:00"),
+    ({"type": "daily", "time": "08:00"}, "2026-10-30T08:00", "2026-10-30T09:00", "2026-10-31T08:00"),
+    ({"type": "daily", "time": "08:00"}, "2026-10-29T08:00", "2026-10-30T09:00", "2026-10-30T08:00"),  # due now
+    ({"type": "daily", "time": "08:00", "days": [0]}, None, "2026-10-30T15:00", "2026-11-02T08:00"),  # Fri->Mon
+    ({"type": "every", "minutes": 30}, "2026-10-30T08:00", "2026-10-30T08:10", "2026-10-30T08:30"),
+    ({"type": "once", "at": "2026-11-01T10:00"}, None, "2026-10-30T08:00", "2026-11-01T10:00"),
+    ({"type": "once", "at": "2026-11-01T10:00"}, "2026-11-01T10:00", "2026-11-02T08:00", None),
+    ({"type": "daily", "time": "nope"}, None, "2026-10-30T08:00", None),
+])
+def test_next_run(sched, last, now, expected):
+    parse = lambda s: datetime.fromisoformat(s) if s else None  # noqa: E731
+    assert core.next_run({"schedule": sched}, parse(last), parse(now)) == parse(expected)
+
+
+def test_next_run_agrees_with_is_due():
+    job = {"schedule": {"type": "daily", "time": "08:00", "days": [1, 3]}}
+    now, last = datetime(2026, 10, 26, 0, 0), None
+    for _ in range(14 * 24 * 2):  # two weeks in 30 min steps
+        due = core.is_due(job, last, now)
+        nxt = core.next_run(job, last, now)
+        assert bool(due) == (nxt is not None and nxt <= now), now
+        if due:
+            last = now
+        now += timedelta(minutes=30)
+
+
+def test_per_agent_turn_limit_rotates_session(root, fake_claude):
+    agent = core.create_agent("research", "role", start=False)
+    agent.update_meta(max_turns=2)
+    for text in ("a", "b"):
+        core.submit("research", text, "test")
+    drain(agent)
+    assert agent.get_state()["turns"] == 0  # rotated after 2 turns instead of the global limit
